@@ -1,0 +1,741 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ──────────────────────────────────────────────────
+// USER & AUTHENTICATION
+// ──────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  image        String?
+  theme        String   @default("dark") // "light" | "dark"
+  locale       String   @default("en")
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Growth
+  tasks            Task[]
+  goals            Goal[]
+  habits           Habit[]
+  assessments      GrowthAssessment[]
+  growthDimensions GrowthDimension[]
+
+  // Study
+  studySubjects StudySubject[]
+  studyRoutines StudyRoutine[]
+
+  // Knowledge
+  knowledgeFolders   KnowledgeFolder[]
+  knowledgeNotes     KnowledgeNote[]
+  knowledgeConcepts  KnowledgeConcept[]
+  knowledgeResources KnowledgeResource[]
+
+  // Finance
+  financialAccounts FinancialAccount[]
+  transactions      Transaction[]
+  savingsFunds      SavingsFund[]
+  financialGoals    FinancialGoal[]
+
+  // Career
+  careerSkills  CareerSkill[]
+  careerEvents  CareerEvent[]
+
+  // Memories
+  memories Memory[]
+
+  // Media
+  mediaEntries MediaEntry[]
+
+  // Calendar
+  calendarEvents CalendarEvent[]
+
+  // Notifications
+  notifications Notification[]
+
+  // AI
+  aiPreferences       AIPreference[]
+  aiAccessPermissions AIAccessPermission[]
+
+  // News
+  newsStoryViews NewsStoryView[]
+  newsInterests  NewsInterest[]
+
+  @@index([email])
+}
+
+// ──────────────────────────────────────────────────
+// TASKS
+// ──────────────────────────────────────────────────
+
+enum TaskStatus {
+  INBOX
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Task {
+  id              String     @id @default(cuid())
+  userId          String
+  title           String
+  description     String?
+  status          TaskStatus @default(INBOX)
+  dueDate         DateTime?
+  startDate       DateTime?
+  progressPercent Int        @default(0)
+  notes           String?
+  links           String[]   @default([])
+  reminderAt      DateTime?
+  timerSeconds    Int        @default(0) // accumulated focus time in seconds
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subtasks       TaskSubtask[]
+  events         TaskEvent[]
+  milestoneLinks MilestoneTask[]
+
+  @@index([userId, status])
+  @@index([userId, dueDate])
+}
+
+model TaskSubtask {
+  id          String   @id @default(cuid())
+  taskId      String
+  title       String
+  isCompleted Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, order])
+}
+
+enum TaskEventType {
+  CREATED
+  EDITED
+  STATUS_CHANGED
+  PROGRESS_CHANGED
+  COMPLETED
+}
+
+model TaskEvent {
+  id          String        @id @default(cuid())
+  taskId      String
+  type        TaskEventType
+  description String?
+  createdAt   DateTime      @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+}
+
+// ──────────────────────────────────────────────────
+// GOALS & MILESTONES
+// ──────────────────────────────────────────────────
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum GoalType {
+  SHORT_TERM
+  MEDIUM_TERM
+  LONG_TERM
+  LIFE
+  ACADEMIC
+  CAREER
+  PERSONAL
+  GROWTH
+  CUSTOM
+}
+
+model Goal {
+  id              String     @id @default(cuid())
+  userId          String
+  title           String
+  type            GoalType   @default(PERSONAL)
+  customType      String?    // populated when type = CUSTOM
+  why             String?
+  whyNot          String?
+  how             String?
+  status          GoalStatus @default(ACTIVE)
+  deadline        DateTime?
+  progressPercent Int        @default(0)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestones GoalMilestone[]
+  habitLinks HabitGoal[]
+
+  @@index([userId, status])
+  @@index([userId, type])
+}
+
+model GoalMilestone {
+  id          String    @id @default(cuid())
+  goalId      String
+  title       String
+  description String?
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  dueDate     DateTime?
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  goal      Goal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  events    MilestoneEvent[]
+  taskLinks MilestoneTask[]
+
+  @@index([goalId, order])
+}
+
+enum MilestoneEventType {
+  CREATED
+  EDITED
+  TASK_LINKED
+  TASK_COMPLETED
+  PROGRESS_CHANGED
+  NOTE_ADDED
+  HABIT_CHANGED
+  COMPLETED
+}
+
+model MilestoneEvent {
+  id             String             @id @default(cuid())
+  milestoneId    String
+  type           MilestoneEventType
+  description    String?
+  relatedTaskId  String?
+  relatedHabitId String?
+  createdAt      DateTime           @default(now())
+
+  milestone GoalMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@index([milestoneId, createdAt])
+}
+
+// Many-to-many: Task <-> GoalMilestone
+model MilestoneTask {
+  milestoneId String
+  taskId      String
+  createdAt   DateTime @default(now())
+
+  milestone GoalMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  task      Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, taskId])
+  @@index([milestoneId])
+  @@index([taskId])
+}
+
+// ──────────────────────────────────────────────────
+// HABITS
+// ──────────────────────────────────────────────────
+
+enum HabitType {
+  GOOD
+  BAD
+  DEVELOPING
+}
+
+enum HabitObjective {
+  MAINTAIN
+  IMPROVE
+  REDUCE
+  REMOVE
+}
+
+enum HabitState {
+  IDENTIFIED
+  EVALUATING
+  IMPROVING
+  MAINTAINING
+  CHANGED
+  REMOVED
+}
+
+model Habit {
+  id          String         @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  type        HabitType      @default(DEVELOPING)
+  objective   HabitObjective @default(IMPROVE)
+  state       HabitState     @default(IDENTIFIED)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes     HabitNote[]
+  goalLinks HabitGoal[]
+
+  @@index([userId])
+}
+
+model HabitNote {
+  id        String   @id @default(cuid())
+  habitId   String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@index([habitId, createdAt])
+}
+
+// Many-to-many: Habit <-> Goal
+model HabitGoal {
+  habitId   String
+  goalId    String
+  createdAt DateTime @default(now())
+
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  goal  Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@id([habitId, goalId])
+  @@index([habitId])
+  @@index([goalId])
+}
+
+// ──────────────────────────────────────────────────
+// SELF-GROWTH ASSESSMENT
+// ──────────────────────────────────────────────────
+
+model GrowthDimension {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user              User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentEntries AssessmentDimensionEntry[]
+
+  @@index([userId])
+}
+
+model GrowthAssessment {
+  id           String   @id @default(cuid())
+  userId       String
+  currentState String?
+  whatChanged  String?
+  cause        String?
+  evidence     String?
+  stillNeeds   String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user             User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dimensionEntries AssessmentDimensionEntry[]
+
+  @@index([userId, createdAt])
+}
+
+model AssessmentDimensionEntry {
+  id           String   @id @default(cuid())
+  assessmentId String
+  dimensionId  String
+  reflection   String?
+  createdAt    DateTime @default(now())
+
+  assessment GrowthAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  dimension  GrowthDimension  @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, dimensionId])
+  @@index([assessmentId])
+  @@index([dimensionId])
+}
+
+// ──────────────────────────────────────────────────
+// STUDY
+// ──────────────────────────────────────────────────
+
+model StudySubject {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  grade     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  routines StudyRoutine[]
+
+  @@index([userId])
+}
+
+model StudyRoutine {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String
+  dayOfWeek Int      // 0 = Sunday … 6 = Saturday
+  startTime String   // "HH:MM" 24-hour format
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject StudySubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([subjectId])
+}
+
+// ──────────────────────────────────────────────────
+// KNOWLEDGE
+// ──────────────────────────────────────────────────
+
+model KnowledgeFolder {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes     KnowledgeNote[]
+  concepts  KnowledgeConcept[]
+  resources KnowledgeResource[]
+
+  @@index([userId])
+}
+
+model KnowledgeNote {
+  id        String   @id @default(cuid())
+  userId    String
+  folderId  String
+  title     String
+  content   String   @default("") // rich text serialized (e.g. ProseMirror JSON or plain text)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder KnowledgeFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([folderId])
+}
+
+model KnowledgeConcept {
+  id          String   @id @default(cuid())
+  userId      String
+  folderId    String
+  title       String
+  explanation String?
+  notes       String?
+  examples    String?
+  links       String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder KnowledgeFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([folderId])
+}
+
+model KnowledgeResource {
+  id        String   @id @default(cuid())
+  userId    String
+  folderId  String
+  title     String
+  url       String?
+  fileUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder KnowledgeFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([folderId])
+}
+
+// ──────────────────────────────────────────────────
+// FINANCE
+// ──────────────────────────────────────────────────
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+model FinancialAccount {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  balance   Decimal  @default(0) @db.Decimal(14, 2)
+  currency  String   @default("USD")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  userId      String
+  accountId   String?
+  amount      Decimal         @db.Decimal(14, 2)
+  type        TransactionType
+  category    String?
+  date        DateTime
+  description String?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+  @@index([userId, type])
+  @@index([accountId])
+}
+
+model SavingsFund {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  balance      Decimal  @default(0) @db.Decimal(14, 2)
+  targetAmount Decimal? @db.Decimal(14, 2)
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model FinancialGoal {
+  id            String    @id @default(cuid())
+  userId        String
+  name          String
+  targetAmount  Decimal   @db.Decimal(14, 2)
+  currentAmount Decimal   @default(0) @db.Decimal(14, 2)
+  deadline      DateTime?
+  why           String?
+  whyNot        String?
+  how           String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────
+// CAREER
+// ──────────────────────────────────────────────────
+
+model CareerSkill {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  level       String?
+  category    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model CareerEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  date        DateTime
+  type        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+// Career goals are regular Goals with type = CAREER.
+// No duplicate model needed — Goals are filtered by type in the Career section.
+
+// ──────────────────────────────────────────────────
+// MEMORIES
+// ──────────────────────────────────────────────────
+
+model Memory {
+  id        String   @id @default(cuid())
+  userId    String
+  photoUrl  String?
+  videoUrl  String?
+  caption   String?
+  date      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+// ──────────────────────────────────────────────────
+// MEDIA
+// ──────────────────────────────────────────────────
+
+enum MediaType {
+  BOOK
+  MOVIE
+  SERIES
+  MUSIC
+  GAME
+  PODCAST
+}
+
+model MediaEntry {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  type      MediaType
+  content   String?   // free-writing space
+  rating    Int?      // optional
+  status    String?   // user-defined label (e.g. "Loved it", "Reading", "Dropped")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([userId, createdAt])
+}
+
+// ──────────────────────────────────────────────────
+// CALENDAR
+// ──────────────────────────────────────────────────
+
+model CalendarEvent {
+  id         String    @id @default(cuid())
+  userId     String
+  title      String
+  date       DateTime
+  time       String?   // "HH:MM" 24-hour, optional
+  reminderAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+// ──────────────────────────────────────────────────
+// AI
+// ──────────────────────────────────────────────────
+
+model AIPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId])
+}
+
+model AIAccessPermission {
+  id        String   @id @default(cuid())
+  userId    String
+  // section values: "growth" | "study" | "knowledge" | "finance" | "career" | "memories" | "media" | "calendar" | "news"
+  section   String
+  isEnabled Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, section])
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────
+// NEWS
+// ──────────────────────────────────────────────────
+
+model NewsStoryView {
+  id       String   @id @default(cuid())
+  userId   String
+  storyUrl String
+  viewedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyUrl])
+  @@index([userId])
+}
+
+model NewsInterest {
+  id        String   @id @default(cuid())
+  userId    String
+  topic     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, topic])
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────
+// NOTIFICATIONS
+// ──────────────────────────────────────────────────
+
+model Notification {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  title             String
+  message           String?
+  isRead            Boolean  @default(false)
+  relatedEntityType String?  // "task" | "goal" | "milestone" | etc.
+  relatedEntityId   String?
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
